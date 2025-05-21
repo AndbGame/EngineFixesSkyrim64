@@ -12,7 +12,8 @@
     "spdlog",
     "tbb",
     "xbyak",
-    "rsm-binary-io"
+    "rsm-binary-io",
+    "detours"
   ],
   "builtin-baseline": "d9ccd77bb554e67137f3f754a2e2f11f4188c82c",
   "overrides": [

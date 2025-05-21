@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "version.h"
 #include "warnings.h"
+#include "debug.h"
 
 inline constexpr REL::Version RUNTIME_1_6_1170(1, 6, 1170, 0);
 
@@ -135,6 +136,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
     warnings::PatchAll();
 
     logger::info("pre-load patches complete"sv);
+
+    debug::UpdateMorphingJobInstall();
 
     return true;
 }

@@ -61,6 +61,8 @@ find_package(TBB
 )
 find_package(xbyak REQUIRED CONFIG)
 
+find_library(Detours_LIBRARIES NAMES detours.lib)
+
 include(cmake/sourcelist.cmake)
 
 source_group(
@@ -106,6 +108,7 @@ target_link_libraries(
 		TBB::tbb
 		TBB::tbbmalloc
 		xbyak::xbyak
+		${Detours_LIBRARIES}
 )
 
 if (MSVC)

@@ -25,4 +25,6 @@ set(SOURCES
 	src/warnings.cpp
 	src/warnings.h
 	src/warnings/miscwarnings.cpp
+	src/debug.h
+	src/debug/debug1.cpp
 )
