@@ -2,3 +2,7 @@
 	path = external/CommonLibSSE-NG
 	url = https://github.com/alandtse/CommonLibVR.git
 	branch = ng
+[submodule "external/rpmalloc"]
+	path = external/rpmalloc
+	url = https://github.com/mjansson/rpmalloc.git
+	branch = main

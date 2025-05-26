@@ -56,7 +56,6 @@ find_package(TBB
 	CONFIG
 	COMPONENTS
 		tbb
-		tbbmalloc
 	CONFIG
 )
 find_package(xbyak REQUIRED CONFIG)
@@ -95,6 +94,7 @@ target_include_directories(
 	PRIVATE
 		${CMAKE_CURRENT_BINARY_DIR}/include
 		${CMAKE_CURRENT_SOURCE_DIR}/src
+		"external/rpmalloc/rpmalloc"
 )
 
 target_link_libraries(
@@ -104,16 +104,16 @@ target_link_libraries(
 		Boost::regex
 		CommonLibSSE::CommonLibSSE
 		TBB::tbb
-		TBB::tbbmalloc
 		xbyak::xbyak
+		${CMAKE_CURRENT_SOURCE_DIR}/external/rpmalloc/lib/windows/release/x86-64/rpmalloc.lib
 )
 
 if (MSVC)
 	target_link_options(
 		${PROJECT_NAME}
 		PRIVATE
-			"$<$<CONFIG:DEBUG>:/INCREMENTAL;/OPT:NOREF;/OPT:NOICF>"
-			"$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>"
+			"$<$<CONFIG:DEBUG>:/INCREMENTAL;/OPT:NOREF;/OPT:NOICF;/NODEFAULTLIB:LIBCMT>"
+			"$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL;/NODEFAULTLIB:LIBCMT>"
 	)
 endif()
 

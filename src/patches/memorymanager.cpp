@@ -1,6 +1,7 @@
 #include "version.h"
 
 #include "offsets.h"
+#include <rpmalloc.h>
 
 namespace
 {
@@ -84,8 +85,8 @@ namespace
         {
             if (a_size > 0)
                 return a_alignmentRequired ?
-                           scalable_aligned_malloc(a_size, a_alignment) :
-                           scalable_malloc(a_size);
+                           rpaligned_alloc(a_alignment, a_size) : // scalable_aligned_malloc(a_size, a_alignment)
+                           rpmalloc(a_size);                 // scalable_malloc(a_size)
             else
                 return g_trash;
         }
@@ -94,8 +95,8 @@ namespace
         {
             if (a_mem != g_trash)
                 a_alignmentRequired ?
-                    scalable_aligned_free(a_mem) :
-                    scalable_free(a_mem);
+                    rpfree(a_mem) : // scalable_aligned_free(a_mem)
+                    rpfree(a_mem); // scalable_free(a_mem)
         }
 
         void* Reallocate(RE::MemoryManager* a_self, void* a_oldMem, std::size_t a_newSize, std::uint32_t a_alignment, bool a_alignmentRequired)
@@ -104,8 +105,8 @@ namespace
                 return Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
             else
                 return a_alignmentRequired ?
-                           scalable_aligned_realloc(a_oldMem, a_newSize, a_alignment) :
-                           scalable_realloc(a_oldMem, a_newSize);
+                            rpaligned_realloc(a_oldMem, a_alignment, a_newSize, rpmalloc_usable_size(a_oldMem), 0) : //scalable_aligned_realloc(a_oldMem, a_newSize, a_alignment) :
+                            rprealloc(a_oldMem, a_newSize);                  // scalable_realloc(a_oldMem, a_newSize);
         }
 
         void ReplaceAllocRoutines()
@@ -145,7 +146,8 @@ namespace
     {
         std::size_t hk_msize(void* a_ptr)
         {
-            return scalable_msize(a_ptr);
+            //return scalable_msize(a_ptr);
+            return rpmalloc_usable_size(a_ptr);
         }
 
         void Install()
@@ -159,7 +161,7 @@ namespace
         void* Allocate(RE::ScrapHeap*, std::size_t a_size, std::size_t a_alignment)
         {
             return a_size > 0 ?
-                       scalable_aligned_malloc(a_size, a_alignment) :
+                       rpaligned_alloc(a_alignment, a_size) : // scalable_aligned_malloc(a_size, a_alignment) :
                        g_trash;
         }
 
@@ -173,7 +175,8 @@ namespace
         void Deallocate(RE::ScrapHeap*, void* a_mem)
         {
             if (a_mem != g_trash)
-                scalable_aligned_free(a_mem);
+                rpfree(a_mem);  // scalable_aligned_free(a_mem);
+                
         }
 
         void WriteHooks()
