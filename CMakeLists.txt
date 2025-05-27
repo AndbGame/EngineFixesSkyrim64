@@ -1,4 +1,8 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.30)
+
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
 
 macro(set_from_environment VARIABLE)
 	if (NOT DEFINED ${VARIABLE} AND DEFINED ENV{${VARIABLE}})
@@ -11,7 +15,7 @@ include(cmake/version.cmake)
 project(
 	EngineFixes
 	VERSION ${VERSION}
-	LANGUAGES CXX
+	LANGUAGES C CXX
 )
 
 add_compile_definitions(SKYRIM)
@@ -45,12 +49,7 @@ add_subdirectory(${CommonLibPath} ${CommonLibName} EXCLUDE_FROM_ALL)
 
 find_package(spdlog CONFIG REQUIRED)
 find_package(AutoTOML REQUIRED CONFIG)
-find_package(Boost
-	MODULE
-	REQUIRED
-	COMPONENTS
-		regex
-)
+find_package(boost_regex CONFIG REQUIRED)
 find_package(TBB
 	REQUIRED
 	CONFIG
@@ -76,6 +75,7 @@ add_library(
 	${PROJECT_NAME}
 	SHARED
 	${SOURCES}
+	external/rpmalloc/rpmalloc/rpmalloc.c
 	${CMAKE_CURRENT_BINARY_DIR}/include/Version.h
 	${CMAKE_CURRENT_BINARY_DIR}/version.rc
 	${PROJECT_NAME}.toml
@@ -105,22 +105,30 @@ target_link_libraries(
 		CommonLibSSE::CommonLibSSE
 		TBB::tbb
 		xbyak::xbyak
-		${CMAKE_CURRENT_SOURCE_DIR}/external/rpmalloc/lib/windows/release/x86-64/rpmalloc.lib
+#		${CMAKE_CURRENT_SOURCE_DIR}/external/rpmalloc/lib/windows/release/x86-64/rpmalloc.lib
+)
+target_compile_definitions(
+	${PROJECT_NAME}
+	PRIVATE
+		ENABLE_PRELOAD
+		ENABLE_VALIDATE_ARGS
+		ENABLE_ASSERTS
+		ENABLE_STATISTICS
 )
 
 if (MSVC)
 	target_link_options(
 		${PROJECT_NAME}
 		PRIVATE
-			"$<$<CONFIG:DEBUG>:/INCREMENTAL;/OPT:NOREF;/OPT:NOICF;/NODEFAULTLIB:LIBCMT>"
-			"$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL;/NODEFAULTLIB:LIBCMT>"
+			"$<$<CONFIG:DEBUG>:/INCREMENTAL;/OPT:NOREF;/OPT:NOICF>"
+			"$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>"
 	)
 endif()
 
 target_precompile_headers(
 	${PROJECT_NAME}
 	PRIVATE
-		src/PCH.h
+	"$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/PCH.h>"
 )
 
 option(COPY_BUILD "whether we should copy the outputs to the skyrim dir" OFF)
