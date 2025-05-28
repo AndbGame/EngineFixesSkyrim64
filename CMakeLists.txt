@@ -83,6 +83,9 @@ add_library(
 	.editorconfig
 )
 
+# TODO: flags
+set_source_files_properties( external/rpmalloc/rpmalloc/rpmalloc.c PROPERTIES COMPILE_FLAGS "/D \"_UNICODE\" /D \"UNICODE\" /std:c17 /Zi /Oi /Oy- /GS- /Qpar- /fp:fast /fp:except- /Zc:forScope /Zc:wchar_t /GR- /openmp- /W4 /WX /wd4201 /wd4100 /Gm- /Ob2 /Ot /GT /GL /GF /O2 /D\"BUILD_RELEASE=1\"")
+
 target_compile_features(
 	${PROJECT_NAME}
 	PRIVATE
@@ -113,7 +116,8 @@ target_compile_definitions(
 		ENABLE_PRELOAD
 		ENABLE_VALIDATE_ARGS
 		ENABLE_ASSERTS
-		ENABLE_STATISTICS
+		ENABLE_THREAD_CACHE=1
+#		ENABLE_STATISTICS
 )
 
 if (MSVC)

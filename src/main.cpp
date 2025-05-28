@@ -5,7 +5,6 @@
 #include "version.h"
 #include "warnings.h"
 #include <stdio.h>
-#include <rpmalloc.h>
 
 inline constexpr REL::Version RUNTIME_1_6_1170(1, 6, 1170, 0);
 
@@ -44,6 +43,7 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
         break;
     case SKSE::MessagingInterface::kSaveGame:
         if (*config::patchMemoryManager) {
+            /*
             FILE* fout;
             auto path = logger::log_directory();
             if (!path)
@@ -53,7 +53,10 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
             if ((fout = fopen(path->string().c_str(), "w")) != NULL)
             {
                 rpmalloc_dump_statistics(fout);
+                fclose(fout);
             }
+            */
+            patches::WriteMemoryManagerStats();
         }
 
         break;
