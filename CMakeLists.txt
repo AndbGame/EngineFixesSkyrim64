@@ -55,6 +55,7 @@ find_package(TBB
 	CONFIG
 	COMPONENTS
 		tbb
+		tbbmalloc
 	CONFIG
 )
 find_package(xbyak REQUIRED CONFIG)
@@ -107,6 +108,7 @@ target_link_libraries(
 		Boost::regex
 		CommonLibSSE::CommonLibSSE
 		TBB::tbb
+		TBB::tbbmalloc
 		xbyak::xbyak
 #		${CMAKE_CURRENT_SOURCE_DIR}/external/rpmalloc/lib/windows/release/x86-64/rpmalloc.lib
 )
