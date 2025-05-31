@@ -48,6 +48,26 @@ namespace patches
             if (globalFormCacheMap[masterId].find(accessor, baseId))
             {
                 formPointer = accessor->second;
+                if (masterId == 0xFF)
+                {
+                    RE::TESForm* formPointerGlobalTable = nullptr;
+                    GlobalFormTableLock->LockForRead();
+
+                    if (*GlobalFormTable)
+                    {
+                        auto iter = (*GlobalFormTable)->find(FormId);
+                        formPointerGlobalTable = (iter != (*GlobalFormTable)->end()) ? iter->second : nullptr;
+                    }
+
+                    GlobalFormTableLock->UnlockForRead();
+
+                    if (formPointerGlobalTable == nullptr)
+                    {
+                        logger::trace("debug hk_GetFormByID from cache for {:08X} is {}, but in globalTable is {}"sv, FormId, (formPointer == nullptr) ? "nullptr" : "Form", (formPointerGlobalTable == nullptr) ? "nullptr" : "Form");
+                        //UpdateFormCache(FormId, formPointerGlobalTable, true);
+                        return formPointerGlobalTable;
+                    }
+                }
                 return formPointer;
             }
         }
@@ -201,8 +221,8 @@ namespace patches
                 origFunc2HookAddr.address(),
                 reinterpret_cast<std::uintptr_t>(UnknownFormFunction2));
         }
-
-        logger::trace("done"sv);
+        bool isTbbScalableAllocator = (globalFormCacheMap[0].get_allocator().allocator_type() == globalFormCacheMap[0].get_allocator().scalable) ? true : false;
+        logger::trace("done. isTbbScalableAllocator: {}"sv, isTbbScalableAllocator);
 
         logger::trace("success"sv);
 
