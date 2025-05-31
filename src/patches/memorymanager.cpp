@@ -118,6 +118,7 @@ namespace
             //logger::info("MemoryManager::Allocate START");
             if (a_size > 0)
             {
+                //rpmalloc_thread_initialize();
                 ret = a_alignmentRequired ?
                           rpaligned_alloc(a_alignment, a_size) :  // rpaligned_alloc(a_alignment, a_size) :  // scalable_aligned_malloc(a_size, a_alignment)
                           rpmalloc(a_size);                       // rpmalloc(a_size);                       // scalable_malloc(a_size)
@@ -144,6 +145,7 @@ namespace
 #endif
             //logger::info("MemoryManager::Deallocate START");
             if (a_mem != g_trash)
+                //rpmalloc_thread_initialize();
                 a_alignmentRequired ?
                     rpfree(a_mem) :        //rpfree(a_mem) : // scalable_aligned_free(a_mem)
                     rpfree(a_mem);   // rpfree(a_mem); // scalable_free(a_mem)
@@ -169,9 +171,12 @@ namespace
             if (a_oldMem == g_trash)
                 ret = Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
             else
+            {
+                //rpmalloc_thread_initialize();
                 ret = a_alignmentRequired ?
                           rpaligned_realloc(a_oldMem, a_alignment, a_newSize, rpmalloc_usable_size(a_oldMem), 0) :  //rpaligned_realloc(a_oldMem, a_alignment, a_newSize, rpmalloc_usable_size(a_oldMem), 0) : //scalable_aligned_realloc(a_oldMem, a_newSize, a_alignment) :
                           rprealloc(a_oldMem, a_newSize);                                                           //rprealloc(a_oldMem, a_newSize);                  // scalable_realloc(a_oldMem, a_newSize);
+            }
 
             //logger::info("MemoryManager::Reallocate END");
             if (ret == 0)
@@ -228,6 +233,7 @@ namespace
         std::size_t hk_msize(void* a_ptr)
         {
             logger::info("msize::hk_msize START");
+            //rpmalloc_thread_initialize();
             //return scalable_msize(a_ptr);
             auto a = rpmalloc_usable_size(a_ptr);
             logger::info("msize::hk_msize END");
@@ -245,6 +251,7 @@ namespace
         void* Allocate(RE::ScrapHeap*, std::size_t a_size, std::size_t a_alignment)
         {
             //logger::info("ScrapHeap::Allocate START");
+            //rpmalloc_thread_initialize();
             void* ret = a_size > 0 ?
                        rpaligned_alloc(a_alignment, a_size) : // scalable_aligned_malloc(a_size, a_alignment) :
                             g_trash;
@@ -266,6 +273,7 @@ namespace
 
         void Deallocate(RE::ScrapHeap*, void* a_mem)
         {
+            //rpmalloc_thread_initialize();
             //logger::info("ScrapHeap::Deallocate START");
             if (a_mem != g_trash)
                 rpfree(a_mem);  // scalable_aligned_free(a_mem);
@@ -321,8 +329,6 @@ namespace
 namespace patches
 {
 
-    //rpmalloc_config_t config = { 0 };
-
     void ErrorCallback(const char* message)
     {
         logger::error("MemoryManager::Error {}"sv, message);
@@ -334,9 +340,11 @@ namespace patches
         logger::trace("- memory manager patch -"sv);
 
         g_trash = new std::byte[1u << 10]{ static_cast<std::byte>(0) };
+
+        //rpmalloc_config_t config{};
         //config.error_callback = &ErrorCallback;
+
         //rpmalloc_initialize_config(&config);
-        rpmalloc_config()->error_callback = &ErrorCallback;
 
         AutoScrapBuffer::Install();
         MemoryManager::Install();
