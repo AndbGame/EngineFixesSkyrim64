@@ -1,4 +1,8 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.30)
+
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
 
 macro(set_from_environment VARIABLE)
 	if (NOT DEFINED ${VARIABLE} AND DEFINED ENV{${VARIABLE}})
@@ -11,7 +15,7 @@ include(cmake/version.cmake)
 project(
 	EngineFixes
 	VERSION ${VERSION}
-	LANGUAGES CXX
+	LANGUAGES C CXX
 )
 
 add_compile_definitions(SKYRIM)
@@ -45,12 +49,7 @@ add_subdirectory(${CommonLibPath} ${CommonLibName} EXCLUDE_FROM_ALL)
 
 find_package(spdlog CONFIG REQUIRED)
 find_package(AutoTOML REQUIRED CONFIG)
-find_package(Boost
-	MODULE
-	REQUIRED
-	COMPONENTS
-		regex
-)
+find_package(boost_regex CONFIG REQUIRED)
 find_package(TBB
 	REQUIRED
 	CONFIG
@@ -77,12 +76,16 @@ add_library(
 	${PROJECT_NAME}
 	SHARED
 	${SOURCES}
+	external/rpmalloc/rpmalloc/rpmalloc.c
 	${CMAKE_CURRENT_BINARY_DIR}/include/Version.h
 	${CMAKE_CURRENT_BINARY_DIR}/version.rc
 	${PROJECT_NAME}.toml
 	.clang-format
 	.editorconfig
 )
+
+# TODO: flags
+set_source_files_properties( external/rpmalloc/rpmalloc/rpmalloc.c PROPERTIES COMPILE_FLAGS "/D \"_UNICODE\" /D \"UNICODE\" /std:c17 /Zi /Oi /Oy- /GS- /Qpar- /fp:fast /fp:except- /Zc:forScope /Zc:wchar_t /GR- /openmp- /W4 /WX /wd4201 /wd4100 /Gm- /Ob2 /Ot /GT /GL /GF /O2 /D\"BUILD_RELEASE=1\"")
 
 target_compile_features(
 	${PROJECT_NAME}
@@ -95,6 +98,7 @@ target_include_directories(
 	PRIVATE
 		${CMAKE_CURRENT_BINARY_DIR}/include
 		${CMAKE_CURRENT_SOURCE_DIR}/src
+		"external/rpmalloc/rpmalloc"
 )
 
 target_link_libraries(
@@ -106,6 +110,16 @@ target_link_libraries(
 		TBB::tbb
 		TBB::tbbmalloc
 		xbyak::xbyak
+#		${CMAKE_CURRENT_SOURCE_DIR}/external/rpmalloc/lib/windows/release/x86-64/rpmalloc.lib
+)
+target_compile_definitions(
+	${PROJECT_NAME}
+	PRIVATE
+		ENABLE_PRELOAD
+		ENABLE_VALIDATE_ARGS
+		ENABLE_ASSERTS
+		ENABLE_THREAD_CACHE=1
+#		ENABLE_STATISTICS
 )
 
 if (MSVC)
@@ -120,7 +134,7 @@ endif()
 target_precompile_headers(
 	${PROJECT_NAME}
 	PRIVATE
-		src/PCH.h
+	"$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/PCH.h>"
 )
 
 option(COPY_BUILD "whether we should copy the outputs to the skyrim dir" OFF)

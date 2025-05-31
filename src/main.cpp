@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "version.h"
 #include "warnings.h"
+#include <stdio.h>
 
 inline constexpr REL::Version RUNTIME_1_6_1170(1, 6, 1170, 0);
 
@@ -38,6 +39,25 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
     case SKSE::MessagingInterface::kPostLoadGame:
         if (*config::warnRefHandleLimit)
             warnings::WarnActiveRefrHandleCount(static_cast<std::uint32_t>(*config::warnRefrLoadedGameLimit));
+
+        break;
+    case SKSE::MessagingInterface::kSaveGame:
+        if (*config::patchMemoryManager) {
+            /*
+            FILE* fout;
+            auto path = logger::log_directory();
+            if (!path)
+                stl::report_and_fail("failed to get standard log path"sv);
+
+            *path /= "EngineFixes_rpmalloc_stats.log"sv;
+            if ((fout = fopen(path->string().c_str(), "w")) != NULL)
+            {
+                rpmalloc_dump_statistics(fout);
+                fclose(fout);
+            }
+            */
+            patches::WriteMemoryManagerStats();
+        }
 
         break;
     default:
