@@ -31,8 +31,10 @@ namespace patches
                 decltype(referencesFormCache)::accessor accessor;
 
                 if (referencesFormCache.find(accessor, maskedFormId))
+                {
                     refrObject = accessor->second;
-                else
+                }
+                if (refrObject == nullptr)
                 {
                     // Find first valid tree object by ESP/ESM load order
                     auto dataHandler = RE::TESDataHandler::GetSingleton();
@@ -58,6 +60,35 @@ namespace patches
 
                     // Insert even if it's a null pointer
                     referencesFormCache.insert(std::make_pair(maskedFormId, refrObject));
+                }
+                else
+                {
+                    RE::TESObjectREFR* refrObject2 = nullptr;
+                    // Find first valid tree object by ESP/ESM load order
+                    auto dataHandler = RE::TESDataHandler::GetSingleton();
+                    for (std::uint32_t i = 0; i < dataHandler->compiledFileCollection.files.size(); i++)
+                    {
+                        RE::TESForm* form = LookupFormByID((i << 24) | maskedFormId);
+                        if (form)
+                            refrObject2 = form->AsReference();
+                        if (refrObject2)
+                        {
+                            auto baseObj = refrObject2->GetBaseObject();
+                            if (baseObj)
+                            {
+                                using STATFlags = RE::TESObjectSTAT::RecordFlags;
+                                // Checks if the form type is TREE (TESObjectTREE) or if it has the kHasTreeLOD flag (TESObjectSTAT)
+                                if (baseObj->formFlags & STATFlags::kHasTreeLOD || baseObj->Is(RE::FormType::Tree))
+                                    break;
+                            }
+                        }
+
+                        refrObject2 = nullptr;
+                    }
+                    if (refrObject2 != refrObject)
+                    {
+                        logger::trace("debug hk_UpdateBlockVisibility maskedFormId = {:08X} found in cache, but Ptr in Cache {:08X} and refrObject2 {:08X} not same"sv, maskedFormId, reinterpret_cast<std::uintptr_t>(refrObject), reinterpret_cast<std::uintptr_t>(refrObject2));
+                    }
                 }
 
                 bool fullyHidden = false;

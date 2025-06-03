@@ -38,6 +38,7 @@ namespace patches
     RE::TESForm* hk_GetFormByID(std::uint32_t FormId)
     {
         RE::TESForm* formPointer = nullptr;
+        bool wrongPtrInCache = false;
 
         const std::uint8_t masterId = (FormId & 0xFF000000) >> 24;
         const std::uint32_t baseId = (FormId & 0x00FFFFFF);
@@ -50,10 +51,28 @@ namespace patches
                 formPointer = accessor->second;
 
                 if (formPointer->GetFormID() != FormId) {
-                    logger::trace("debug hk_GetFormByID FormId = {:08X}, but formPointer->GetFormID() = {:08X}"sv, FormId, formPointer->GetFormID());
+                    logger::trace("debug hk_GetFormByID FormId = {:08X}, but formPointer->GetFormID() = {:08X}:{}"sv, FormId, formPointer->GetFormID(), RE::FormTypeToString(formPointer->GetFormType()));
+                    formPointer = nullptr;
+                    wrongPtrInCache = true;
                 }
                 else
                 {
+                    // TODO: temporary Debug
+                    GlobalFormTableLock->LockForRead();
+                    RE::TESForm* formPointerInGlobalFormTable = nullptr;
+                    if (*GlobalFormTable)
+                    {
+                        auto iter = (*GlobalFormTable)->find(FormId);
+                        formPointerInGlobalFormTable = (iter != (*GlobalFormTable)->end()) ? iter->second : nullptr;
+                    }
+                    GlobalFormTableLock->UnlockForRead();
+                    if (formPointerInGlobalFormTable != formPointer)
+                    {
+                        logger::trace("debug hk_GetFormByID FormId = {:08X} found in cache, but Ptr in Cache {:08X} and GlobalFormTable {:08X} not same"sv, FormId, reinterpret_cast<std::uintptr_t>(formPointer), reinterpret_cast<std::uintptr_t>(formPointerInGlobalFormTable));
+                        formPointer = nullptr;
+                        wrongPtrInCache = true;
+                    }
+
                     return formPointer;
                 }
             }
@@ -70,7 +89,7 @@ namespace patches
 
         GlobalFormTableLock->UnlockForRead();
 
-        if (formPointer)
+        if (formPointer || wrongPtrInCache)
             UpdateFormCache(FormId, formPointer, false);
 
         return formPointer;

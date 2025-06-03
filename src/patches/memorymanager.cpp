@@ -82,30 +82,58 @@ namespace
     {
         void* Allocate(RE::MemoryManager*, std::size_t a_size, std::uint32_t a_alignment, bool a_alignmentRequired)
         {
+            void* ret = g_trash;
+            errno = 0;
             if (a_size > 0)
-                return a_alignmentRequired ?
+                ret = a_alignmentRequired ?
                            scalable_aligned_malloc(a_size, a_alignment) :
                            scalable_malloc(a_size);
-            else
-                return g_trash;
+            if (errno || ret == nullptr)
+            {
+                logger::trace("MemoryManager::Allocate error {} ", errno);
+            }
+            return ret;
         }
 
         void Deallocate(RE::MemoryManager*, void* a_mem, bool a_alignmentRequired)
         {
-            if (a_mem != g_trash)
-                a_alignmentRequired ?
-                    scalable_aligned_free(a_mem) :
-                    scalable_free(a_mem);
+            if (a_mem != g_trash && a_mem != nullptr)
+            {
+                errno = 0;
+                if (scalable_msize(a_mem) != 0)
+                {
+                    a_alignmentRequired ?
+                        scalable_aligned_free(a_mem) :
+                        scalable_free(a_mem);
+                }
+                else
+                {
+                    logger::trace("MemoryManager::Deallocate trying to free already free pointer");
+                }
+                if (errno)
+                {
+                    logger::trace("MemoryManager::Deallocate error {} ", errno);
+                }
+            }
         }
 
         void* Reallocate(RE::MemoryManager* a_self, void* a_oldMem, std::size_t a_newSize, std::uint32_t a_alignment, bool a_alignmentRequired)
         {
+            void* ret = g_trash;
             if (a_oldMem == g_trash)
-                return Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
+                ret = Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
             else
-                return a_alignmentRequired ?
+            {
+                errno = 0;
+                ret = a_alignmentRequired ?
                            scalable_aligned_realloc(a_oldMem, a_newSize, a_alignment) :
                            scalable_realloc(a_oldMem, a_newSize);
+                if (errno || ret == nullptr)
+                {
+                    logger::trace("MemoryManager::Reallocate error {} ", errno);
+                }
+            }
+            return ret;
         }
 
         void ReplaceAllocRoutines()
@@ -158,9 +186,17 @@ namespace
     {
         void* Allocate(RE::ScrapHeap*, std::size_t a_size, std::size_t a_alignment)
         {
-            return a_size > 0 ?
-                       scalable_aligned_malloc(a_size, a_alignment) :
-                       g_trash;
+            void* ret = g_trash;
+            errno = 0;
+            if (a_size > 0)
+            {
+                ret = scalable_aligned_malloc(a_size, a_alignment);
+            }
+            if (errno || ret == nullptr)
+            {
+                logger::trace("ScrapHeap::Allocate error {} ", errno);
+            }
+            return ret;
         }
 
         RE::ScrapHeap* Ctor(RE::ScrapHeap* a_this)
@@ -172,8 +208,22 @@ namespace
 
         void Deallocate(RE::ScrapHeap*, void* a_mem)
         {
-            if (a_mem != g_trash)
-                scalable_aligned_free(a_mem);
+            if (a_mem != g_trash && a_mem != nullptr)
+            {
+                errno = 0;
+                if (scalable_msize(a_mem) != 0)
+                {
+                    scalable_aligned_free(a_mem);
+                }
+                else
+                {
+                    logger::trace("ScrapHeap::Deallocate trying to free already free pointer");
+                }
+                if (errno)
+                {
+                    logger::trace("ScrapHeap::Deallocate error {} ", errno);
+                }
+            }
         }
 
         void WriteHooks()
