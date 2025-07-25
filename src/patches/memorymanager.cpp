@@ -85,6 +85,7 @@ namespace
                 void *return_ptr = a_alignmentRequired ? scalable_aligned_malloc(a_size + 0x100, a_alignment) : scalable_malloc(a_size + 0x100);
                 uint64_t *return_ptr_offset = (uint64_t *) (((uint64_t) return_ptr) + 0x100);
                 *(uint64_t *) return_ptr = 0x1337DEADDEAD1337;
+                //logger::trace("MemoryManagerStats::Allocate ptr {} (internal ptr {}) diff {}.", reinterpret_cast<uintptr_t>(return_ptr_offset), reinterpret_cast<uintptr_t>(return_ptr), reinterpret_cast<uintptr_t>(return_ptr_offset) - reinterpret_cast<uintptr_t>(return_ptr));
                 return (void *) return_ptr_offset;
             }
             else return g_trash;
@@ -96,7 +97,11 @@ namespace
                     std::atomic<uint64_t> *original_mem = (std::atomic<uint64_t> *) (((uint64_t) a_mem) - 0x100);
                     uint64_t expected = 0x1337DEADDEAD1337;
                     if (original_mem->compare_exchange_strong(expected, (uint64_t) 0x0)) {
+                        //logger::trace("MemoryManagerStats::Deallocate ptr {} (internal ptr {}) diff {}.", reinterpret_cast<uintptr_t>(a_mem), reinterpret_cast<uintptr_t>(original_mem), reinterpret_cast<uintptr_t>(a_mem) - reinterpret_cast<uintptr_t>(original_mem));
                         a_alignmentRequired ? scalable_aligned_free(original_mem) : scalable_free(original_mem);
+                    }
+                    else {
+                        logger::warn("MemoryManager::Deallocate error 202: already deallocated for addr {}.", reinterpret_cast<uintptr_t>(a_mem));
                     }
                 }
             }
@@ -108,15 +113,24 @@ namespace
                 return Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
             else if (a_oldMem) {
                 void *original_mem = (std::atomic<uint64_t> *) (((uint64_t) a_oldMem) - 0x100);
+
+                //logger::trace("MemoryManagerStats::Reallocate ptr {} (internal ptr {}) diff {}.", reinterpret_cast<uintptr_t>(a_oldMem), reinterpret_cast<uintptr_t>(original_mem), reinterpret_cast<uintptr_t>(a_oldMem) - reinterpret_cast<uintptr_t>(original_mem));
+
                 std::atomic<uint64_t> *original_cookie = (std::atomic<uint64_t> *) (((uint64_t) a_oldMem) - 0x100);
-                uint64_t expected = 0x1337DEADDEAD1337;
+                    uint64_t expected = 0x1337DEADDEAD1337;
                 if (original_cookie->compare_exchange_strong(expected, (uint64_t) 0x1337DEADDEAD1337)) {
                     void *new_mem = a_alignmentRequired ? scalable_aligned_realloc(original_mem, a_newSize + 0x100, a_alignment)
                                                         : scalable_realloc(original_mem, a_newSize + 0x100);
                     *(uint64_t *) new_mem = (uint64_t) 0x1337DEADDEAD1337;
                     return (void *) (((uint64_t) new_mem) + 0x100);
                 }
+                else
+                {
+                    logger::warn("MemoryManager::Reallocate error 302: already deallocated for addr {}.", reinterpret_cast<uintptr_t>(a_oldMem));
+                    return g_trash;
+                }
             }
+            return g_trash;
         }
         void ReplaceAllocRoutines()
         {
@@ -168,7 +182,9 @@ namespace
     {
         void* Allocate(RE::ScrapHeap*, std::size_t a_size, std::size_t a_alignment)
         {
-            return MemoryManager::Allocate(nullptr,a_size,a_alignment,true);
+            // TODO: std::size_t -> std::uint32_t
+            //logger::trace("ScrapHeap::Allocate a_size: {}; a_alignment: {}; static_cast a_alignment: {}.", a_size, a_alignment, static_cast<std::uint32_t>(a_alignment));
+            return MemoryManager::Allocate(nullptr, a_size, static_cast<std::uint32_t>(a_alignment), true);
         }
 
         RE::ScrapHeap* Ctor(RE::ScrapHeap* a_this)
@@ -180,6 +196,7 @@ namespace
 
         void Deallocate(RE::ScrapHeap*, void* a_mem)
         {
+            //logger::trace("ScrapHeap::Deallocate {}.", reinterpret_cast<uintptr_t>(a_mem));
             return MemoryManager::Deallocate(nullptr,a_mem,true);
         }
 
