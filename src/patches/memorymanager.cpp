@@ -102,16 +102,22 @@ namespace
             }
         }
 
-        void* Reallocate(RE::MemoryManager* a_self, void* a_oldMem, std::size_t a_newSize, std::uint32_t a_alignment, bool a_alignmentRequired)
-        {
+        void *Reallocate(RE::MemoryManager *a_self, void *a_oldMem, std::size_t a_newSize, std::uint32_t a_alignment,
+                        bool a_alignmentRequired) {
             if (a_oldMem == g_trash)
                 return Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
-            else
-                return a_alignmentRequired ?
-                           scalable_aligned_realloc(a_oldMem, a_newSize, a_alignment) :
-                           scalable_realloc(a_oldMem, a_newSize);
+            else if (a_oldMem) {
+                void *original_mem = (std::atomic<uint64_t> *) (((uint64_t) a_oldMem) - 0x100);
+                std::atomic<uint64_t> *original_cookie = (std::atomic<uint64_t> *) (((uint64_t) a_oldMem) - 0x100);
+                uint64_t expected = 0x1337DEADDEAD1337;
+                if (original_cookie->compare_exchange_strong(expected, (uint64_t) 0x1337DEADDEAD1337)) {
+                    void *new_mem = a_alignmentRequired ? scalable_aligned_realloc(original_mem, a_newSize + 0x100, a_alignment)
+                                                        : scalable_realloc(original_mem, a_newSize + 0x100);
+                    *(uint64_t *) new_mem = (uint64_t) 0x1337DEADDEAD1337;
+                    return (void *) (((uint64_t) new_mem) + 0x100);
+                }
+            }
         }
-
         void ReplaceAllocRoutines()
         {
             using tuple_t = std::tuple<REL::ID, std::size_t, void*>;
@@ -162,9 +168,7 @@ namespace
     {
         void* Allocate(RE::ScrapHeap*, std::size_t a_size, std::size_t a_alignment)
         {
-            return a_size > 0 ?
-                       scalable_aligned_malloc(a_size, a_alignment) :
-                       g_trash;
+            return MemoryManager::Allocate(nullptr,a_size,a_alignment,true);
         }
 
         RE::ScrapHeap* Ctor(RE::ScrapHeap* a_this)
@@ -176,8 +180,7 @@ namespace
 
         void Deallocate(RE::ScrapHeap*, void* a_mem)
         {
-            if (a_mem != g_trash)
-                scalable_aligned_free(a_mem);
+            return MemoryManager::Deallocate(nullptr,a_mem,true);
         }
 
         void WriteHooks()
