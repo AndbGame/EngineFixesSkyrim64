@@ -80,22 +80,26 @@ namespace
 
     namespace MemoryManager
     {
-        void* Allocate(RE::MemoryManager*, std::size_t a_size, std::uint32_t a_alignment, bool a_alignmentRequired)
-        {
-            if (a_size > 0)
-                return a_alignmentRequired ?
-                           scalable_aligned_malloc(a_size, a_alignment) :
-                           scalable_malloc(a_size);
-            else
-                return g_trash;
+        void *Allocate(RE::MemoryManager *, std::size_t a_size, std::uint32_t a_alignment, bool a_alignmentRequired) {
+            if (a_size > 0) {
+                void *return_ptr = a_alignmentRequired ? scalable_aligned_malloc(a_size + 0x100, a_alignment) : scalable_malloc(a_size + 0x100);
+                uint64_t *return_ptr_offset = (uint64_t *) (((uint64_t) return_ptr) + 0x100);
+                *(uint64_t *) return_ptr = 0x1337DEADDEAD1337;
+                return (void *) return_ptr_offset;
+            }
+            else return g_trash;
         }
 
-        void Deallocate(RE::MemoryManager*, void* a_mem, bool a_alignmentRequired)
-        {
-            if (a_mem != g_trash)
-                a_alignmentRequired ?
-                    scalable_aligned_free(a_mem) :
-                    scalable_free(a_mem);
+        void Deallocate(RE::MemoryManager *, void *a_mem, bool a_alignmentRequired) {
+            if (a_mem != g_trash) {
+                if (a_mem) {
+                    std::atomic<uint64_t> *original_mem = (std::atomic<uint64_t> *) (((uint64_t) a_mem) - 0x100);
+                    uint64_t expected = 0x1337DEADDEAD1337;
+                    if (original_mem->compare_exchange_strong(expected, (uint64_t) 0x0)) {
+                        a_alignmentRequired ? scalable_aligned_free(original_mem) : scalable_free(original_mem);
+                    }
+                }
+            }
         }
 
         void* Reallocate(RE::MemoryManager* a_self, void* a_oldMem, std::size_t a_newSize, std::uint32_t a_alignment, bool a_alignmentRequired)
