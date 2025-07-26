@@ -1,6 +1,10 @@
 #include "version.h"
 
 #include "offsets.h"
+#include <boost/stacktrace.hpp>
+#include <windows.h>
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
 
 namespace
 {
@@ -83,19 +87,57 @@ namespace
 
         struct PointerStats
         {
-            int allocated = 0;
+            bool allocated = false;
         };
 
         tbb::concurrent_hash_map<uintptr_t, PointerStats*> allocatedPointers;
 
         RE::TESForm* ctd;
 
-        //std::mutex memory_mutex;
-
-        void Allocate(void* mem)
+        inline void StackDump()
         {
-            //std::lock_guard<std::mutex> guard(memory_mutex);
+            auto st = boost::stacktrace::stacktrace();
+            HANDLE process = GetCurrentProcess();
+            SymInitialize(process, NULL, TRUE);
 
+            for (size_t i = 0; i < st.size(); i++)
+            {
+                auto frame = st[i];
+                const void* address = frame.address();
+                DWORD64 displacement = 0;
+
+                // Get module info
+                IMAGEHLP_MODULE64 moduleInfo;
+                ZeroMemory(&moduleInfo, sizeof(moduleInfo));
+                moduleInfo.SizeOfStruct = sizeof(moduleInfo);
+                BOOL hasModule = SymGetModuleInfo64(process, (DWORD64)address, &moduleInfo);
+
+                // Get symbol info
+                char symbolBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+                PSYMBOL_INFO symbol = (PSYMBOL_INFO)symbolBuffer;
+                symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+                symbol->MaxNameLen = MAX_SYM_NAME;
+                BOOL hasSymbol = SymFromAddr(process, (DWORD64)address, &displacement, symbol);
+
+                // Get instruction address
+                CONTEXT context;
+                RtlCaptureContext(&context);
+
+                char* dllName = nullptr;
+                if (hasModule)
+
+                {
+                    dllName = strrchr(moduleInfo.ImageName, '\\');
+                }
+
+                logger::error("Stack trace: [{}] DLL: {} | Offset: {:X} | Instruction: {:X} | Function: {}", i, (hasModule ? (dllName ? dllName + 1 : moduleInfo.ImageName) : "unknown"), displacement, context.Rip, (hasSymbol ? symbol->Name : "unknown"));
+            }
+
+            SymCleanup(process);
+        }
+
+        bool Allocate(void* mem)
+        {
             decltype(allocatedPointers)::accessor accessor;
 
             uintptr_t addr = reinterpret_cast<uintptr_t>(mem);
@@ -103,27 +145,30 @@ namespace
             if (allocatedPointers.find(accessor, addr))
             {
                 PointerStats* stats = accessor->second;
-                stats->allocated++;
-                if (stats->allocated > 1)
+                if (stats->allocated)
                 {
-                    logger::trace("MemoryManagerStats::Allocate error 101: already allocated {} times for {}.", stats->allocated, addr);
+                    logger::trace("MemoryManagerStats::Allocate error 101: already allocated for {}.", addr);
+                    return false;
                 }
-                else {
-                    //logger::trace("MemoryManagerStats::Allocate success: allocated {} times for {}.", stats->allocated, addr);
+                else
+                {
+                    stats->allocated = true;
+                    //logger::trace("MemoryManagerStats::Allocate success: allocated for {}.", addr);
+                    return true;
                 }
             }
             else
             {
                 PointerStats* stats = new PointerStats();
-                stats->allocated = 1;
+                stats->allocated = true;
                 allocatedPointers.emplace(addr, stats);
-                //logger::trace("MemoryManagerStats::Allocate success: allocated {} times for {}.", stats->allocated, addr);
+                //logger::trace("MemoryManagerStats::Allocate success: allocated for {}.", addr);
+                return true;
             }
         }
 
-        void Deallocate(void* mem)
+        bool Deallocate(void* mem)
         {
-            //std::lock_guard<std::mutex> guard(memory_mutex);
             decltype(allocatedPointers)::accessor accessor;
 
             uintptr_t addr = reinterpret_cast<uintptr_t>(mem);
@@ -131,73 +176,83 @@ namespace
             if (allocatedPointers.find(accessor, addr))
             {
                 PointerStats* stats = accessor->second;
-                stats->allocated--;
-                if (stats->allocated < 0)
+                if (!stats->allocated)
                 {
-                    logger::trace("MemoryManagerStats::Deallocate error 202: already deallocated {} times for {}.", (stats->allocated * -1), addr);
-                    std::this_thread::sleep_for(std::chrono::seconds(10000));
+                    logger::error("MemoryManagerStats::Deallocate error 202: already deallocated for {}.", addr);
+                    StackDump();
+                    return false;
 
                 }
                 else {
-                    //logger::trace("MemoryManagerStats::Deallocate success: allocated {} times for {}.", stats->allocated, addr);
+                    stats->allocated = false;
+                    //logger::trace("MemoryManagerStats::Deallocate success: allocated for {}.", addr);
+                    return true;
                 }
             }
             else
             {
                 logger::trace("MemoryManagerStats::Deallocate error 203: not allocated for {}.", addr);
+                return false;
             }
         }
 
-        void Reallocate(void* oldmem, void* newmem)
+        bool Reallocate(void* oldmem, void* newmem)
         {
-            //std::lock_guard<std::mutex> guard(memory_mutex);
             decltype(allocatedPointers)::accessor accessor;
 
             uintptr_t old_addr = reinterpret_cast<uintptr_t>(oldmem);
             uintptr_t new_addr = reinterpret_cast<uintptr_t>(newmem);
 
             if (old_addr == new_addr) {
-                return;
+                return true;
             }
+
+            bool oldSuccess = true;
+            bool newSuccess = true;
 
             if (allocatedPointers.find(accessor, old_addr))
             {
                 PointerStats* stats = accessor->second;
-                stats->allocated--;
-                if (stats->allocated < 0)
+                if (!stats->allocated)
                 {
-                    logger::trace("MemoryManagerStats::Reallocate old_addr error 302: already deallocated {} times for {}.", (stats->allocated * -1), old_addr);
+                    logger::trace("MemoryManagerStats::Reallocate old_addr error 302: already deallocated for {}.", old_addr);
+                    oldSuccess =  false;
                 }
                 else
                 {
-                    //logger::trace("MemoryManagerStats::Reallocate old_addr success: allocated {} times for {}.", stats->allocated, old_addr);
+                    //logger::trace("MemoryManagerStats::Reallocate old_addr success: allocated for {}.", old_addr);
+                    stats->allocated = false;
                 }
             }
             else
             {
                 logger::trace("MemoryManagerStats::Reallocate old_addr error 303: not allocated for {}.", old_addr);
+                oldSuccess = false;
             }
 
             if (allocatedPointers.find(accessor, new_addr))
             {
                 PointerStats* stats = accessor->second;
-                stats->allocated++;
-                if (stats->allocated > 1)
+                if (stats->allocated)
                 {
-                    logger::trace("MemoryManagerStats::Reallocate new_addr error 301: already allocated {} times for {}.", stats->allocated, new_addr);
+                    logger::trace("MemoryManagerStats::Reallocate new_addr error 301: already allocated for {}.", new_addr);
+                    newSuccess = false;
                 }
                 else
                 {
-                    //logger::trace("MemoryManagerStats::Reallocate new_addr success: allocated {} times for {}.", stats->allocated, new_addr);
+                    //logger::trace("MemoryManagerStats::Reallocate new_addr success: allocated for {}.", new_addr);
+                    stats->allocated = true;
                 }
             }
             else
             {
                 PointerStats* stats = new PointerStats();
-                stats->allocated = 1;
+                stats->allocated = true;
                 allocatedPointers.emplace(new_addr, stats);
-                //logger::trace("MemoryManagerStats::Reallocate new_addr success: allocated {} times for {}.", stats->allocated, new_addr);
+                //logger::trace("MemoryManagerStats::Reallocate new_addr success: allocated for {}.", new_addr);
             }
+
+            return oldSuccess && newSuccess;
         }
     }
 
@@ -208,16 +263,14 @@ namespace
             void* ret = g_trash;
             if (a_size > 0)
             {
-                errno = 0;
                 ret = a_alignmentRequired ?
-                          scalable_aligned_malloc(a_size, a_alignment) :
-                          scalable_malloc(a_size);
-                if (errno || ret == nullptr)
+                            scalable_aligned_malloc(a_size, a_alignment) :
+                            scalable_malloc(a_size);
+                if (ret == nullptr)
                 {
                     logger::trace("MemoryManager::Allocate error {} ", errno);
                 }
-                else
-                {
+                else {
                     MemoryManagerStats::Allocate(ret);
                 }
             }
@@ -228,23 +281,11 @@ namespace
         {
             if (a_mem != g_trash && a_mem != nullptr)
             {
-                errno = 0;
-                if (scalable_msize(a_mem) != 0)
+                if (MemoryManagerStats::Deallocate(a_mem))
                 {
-                    MemoryManagerStats::Deallocate(a_mem);
-
                     a_alignmentRequired ?
                         scalable_aligned_free(a_mem) :
                         scalable_free(a_mem);
-
-                }
-                else
-                {
-                    logger::trace("MemoryManager::Deallocate trying to free already free pointer");
-                }
-                if (errno)
-                {
-                    logger::trace("MemoryManager::Deallocate error {} ", errno);
                 }
             }
         }
@@ -256,11 +297,11 @@ namespace
                 ret = Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
             else
             {
-                errno = 0;
                 ret = a_alignmentRequired ?
                            scalable_aligned_realloc(a_oldMem, a_newSize, a_alignment) :
                            scalable_realloc(a_oldMem, a_newSize);
-                if (errno || ret == nullptr)
+
+                if (ret == nullptr)
                 {
                     logger::trace("MemoryManager::Reallocate error {} ", errno);
                 }
@@ -324,14 +365,12 @@ namespace
             void* ret = g_trash;
             if (a_size > 0)
             {
-                errno = 0;
                 ret = scalable_aligned_malloc(a_size, a_alignment);
-                if (errno || ret == nullptr)
+                if (ret == nullptr)
                 {
                     logger::trace("ScrapHeap::Allocate error {} ", errno);
                 }
-                else
-                {
+                else {
                     MemoryManagerStats::Allocate(ret);
                 }
             }
@@ -349,20 +388,9 @@ namespace
         {
             if (a_mem != g_trash && a_mem != nullptr)
             {
-                errno = 0;
-                if (scalable_msize(a_mem) != 0)
+                if (MemoryManagerStats::Deallocate(a_mem))
                 {
                     scalable_aligned_free(a_mem);
-
-                    MemoryManagerStats::Deallocate(a_mem);
-                }
-                else
-                {
-                    logger::trace("ScrapHeap::Deallocate trying to free already free pointer");
-                }
-                if (errno)
-                {
-                    logger::trace("ScrapHeap::Deallocate error {} ", errno);
                 }
             }
         }
