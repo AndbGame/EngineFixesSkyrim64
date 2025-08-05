@@ -55,6 +55,12 @@ find_package(TBB
 	CONFIG
 )
 find_package(xbyak REQUIRED CONFIG)
+find_package(Boost
+        CONFIG
+        REQUIRED
+        COMPONENTS
+        stacktrace_windbg
+)
 
 include(cmake/sourcelist.cmake)
 
@@ -101,6 +107,7 @@ target_link_libraries(
 		TBB::tbb
 		TBB::tbbmalloc
 		xbyak::xbyak
+		Boost::stacktrace_windbg
 )
 
 if (MSVC)
