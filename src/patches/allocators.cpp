@@ -4,6 +4,106 @@
 
 namespace Patches::Allocators
 {
+    namespace MemoryManagerStats
+    {
+
+        struct PointerStats
+        {
+            bool allocated = false;
+        };
+
+        gtl::parallel_flat_hash_map<uintptr_t, PointerStats*> allocatedPointers;
+
+        bool Allocate(void* mem)
+        {
+            uintptr_t addr = reinterpret_cast<uintptr_t>(mem);
+            bool      ret = true;
+
+            if (allocatedPointers.modify_if(addr, [&ret](const gtl::parallel_flat_hash_map<uintptr_t, PointerStats*>::value_type& v) {
+                    if (v.second->allocated) {
+                        logger::trace("MemoryManagerStats::Allocate error 101: already allocated for {}.", v.first);
+                        ret = false;
+                    } else {
+                        v.second->allocated = true;
+                        //logger::trace("MemoryManagerStats::Allocate success: allocated for {}.", addr);
+                    }
+                }))
+            {
+                return ret;
+            } else {
+                PointerStats* stats = new PointerStats();
+                stats->allocated = true;
+                allocatedPointers.emplace(addr, stats);
+                //logger::trace("MemoryManagerStats::Allocate success: allocated for {}.", addr);
+                return true;
+            }
+        }
+
+        bool Deallocate(void* mem)
+        {
+            uintptr_t addr = reinterpret_cast<uintptr_t>(mem);
+            bool      ret = true;
+
+            if (!allocatedPointers.modify_if(addr, [&ret](const gtl::parallel_flat_hash_map<uintptr_t, PointerStats*>::value_type& v) {
+                    if (!v.second->allocated) {
+                        logger::error("MemoryManagerStats::Deallocate error 202: already deallocated for {}.", v.first);
+                        ret = false;
+
+                    } else {
+                        v.second->allocated = false;
+                        //logger::trace("MemoryManagerStats::Deallocate success: allocated for {}.", addr);
+                    }
+                })) {
+                logger::trace("MemoryManagerStats::Deallocate error 203: not allocated for {}.", addr);
+                ret = false;
+            }
+            return ret;
+        }
+
+        bool Reallocate(void* oldmem, void* newmem)
+        {
+            uintptr_t old_addr = reinterpret_cast<uintptr_t>(oldmem);
+            uintptr_t new_addr = reinterpret_cast<uintptr_t>(newmem);
+
+            if (old_addr == new_addr) {
+                return true;
+            }
+
+            bool oldSuccess = true;
+            bool newSuccess = true;
+
+            if (!allocatedPointers.modify_if(old_addr, [&oldSuccess](const gtl::parallel_flat_hash_map<uintptr_t, PointerStats*>::value_type& v) {
+                    if (!v.second->allocated) {
+                        logger::trace("MemoryManagerStats::Reallocate old_addr error 302: already deallocated for {}.", v.first);
+                        oldSuccess = false;
+                    } else {
+                        //logger::trace("MemoryManagerStats::Reallocate old_addr success: allocated for {}.", old_addr);
+                        v.second->allocated = false;
+                    }
+                })) {
+                logger::trace("MemoryManagerStats::Reallocate old_addr error 303: not allocated for {}.", old_addr);
+                oldSuccess = false;
+            }
+
+            if (!allocatedPointers.if_contains(new_addr, [&newSuccess](const gtl::parallel_flat_hash_map<uintptr_t, PointerStats*>::value_type& v) {
+                    if (v.second->allocated) {
+                        logger::trace("MemoryManagerStats::Reallocate new_addr error 301: already allocated for {}.", v.first);
+                        newSuccess = false;
+                    } else {
+                        //logger::trace("MemoryManagerStats::Reallocate new_addr success: allocated for {}.", new_addr);
+                        v.second->allocated = true;
+                    }
+                })) {
+                PointerStats* stats = new PointerStats();
+                stats->allocated = true;
+                allocatedPointers.emplace(new_addr, stats);
+                //logger::trace("MemoryManagerStats::Reallocate new_addr success: allocated for {}.", new_addr);
+            }
+
+            return oldSuccess && newSuccess;
+        }
+    }
+
     namespace detail
     {
         namespace AutoScrapBuffer
@@ -75,6 +175,10 @@ namespace Patches::Allocators
                     logger::info("failed to allocate memory, caller address {:x}"sv, reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - REL::Module::get().base() );
                 }
 #endif
+                if (mem != nullptr) {
+                    MemoryManagerStats::Allocate(mem);
+                }
+
                 return mem;
             }
 
@@ -83,8 +187,9 @@ namespace Patches::Allocators
                 // if (a_newSize == 0) {
                 //     logger::info("alloc of size {} detected, caller address {:x}", a_newSize, reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - REL::Module::get().base());
                 // }
-                if (a_oldMem == g_Trash)
+                if (a_oldMem == g_Trash) {
                     return Allocate(a_self, a_newSize, a_alignment, a_alignmentRequired);
+                }
 #ifdef USE_TBB
                 void* mem = a_alignmentRequired ? scalable_aligned_realloc(a_oldMem, a_newSize, a_alignment) : scalable_realloc(a_oldMem, a_newSize);
 #else
@@ -95,13 +200,20 @@ namespace Patches::Allocators
                 if (mem == nullptr) {
                     logger::info("failed to allocate memory, caller address {:x}"sv, reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - REL::Module::get().base() );
                 }
-#endif
+#    endif
+                if(mem != nullptr)
+                {
+                    MemoryManagerStats::Reallocate(a_oldMem, mem);
+                }
                 return mem;
             }
 
             void Deallocate(RE::MemoryManager*, void* a_mem, bool a_alignmentRequired)
             {
                 if (a_mem != g_Trash) {
+                    if (a_mem != nullptr) {
+                        MemoryManagerStats::Deallocate(a_mem);
+                    }
                     if (a_alignmentRequired)
 #ifdef USE_TBB
                         scalable_aligned_free(a_mem);
@@ -175,6 +287,9 @@ namespace Patches::Allocators
                     logger::info("failed to allocate memory, caller address {:x}"sv, reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - REL::Module::get().base() );
                 }
 #endif
+                if (mem != nullptr) {
+                    MemoryManagerStats::Allocate(mem);
+                }
                 return mem;
             }
 
@@ -187,6 +302,9 @@ namespace Patches::Allocators
 
             void Deallocate(RE::ScrapHeap*, void* a_mem)
             {
+                if (a_mem != nullptr) {
+                    MemoryManagerStats::Deallocate(a_mem);
+                }
 #ifdef USE_TBB
                 scalable_aligned_free(a_mem);
 #else
